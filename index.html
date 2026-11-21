@@ -49,7 +49,8 @@ async function login(){
     });
     const authData=await authRes.json();
     if(!authRes.ok||!authData.access_token){alert('Connexion Supabase Auth refusée : '+(authData.msg||authData.message||authData.error_description||'Vérifiez l’e-mail et le mot de passe.'));return}
-    const profileRes=await fetch(db.supabase.url+'/rest/v1/profiles?id=eq.'+encodeURIComponent(authData.user.id)+'&select=id,role,phone',{
+    const profileRes=await fetch(db.supabase.url+'/rest/v1/profiles?id=eq.'+encodeURIComponent(authData.user.id)+'select=id,role
+                                 ',{
      headers:{apikey:db.supabase.key,'Authorization':'Bearer '+authData.access_token,'Accept':'application/json'}
     });
     const profile=await profileRes.json();
