@@ -30,7 +30,12 @@ const modules=['Tableau de bord','Membres','Accès membres','Dépôts','Retraits
 let db=load(), user=null, current='Tableau de bord', editing=null;
 function fresh(){return {members:[],tx:[],rate:4,openingCash:0,adminPassword:'AFEM2026',messages:[],cash:[],firebase:null,lastSync:null,backupEmail:'djeffson.simon10@gmail.com',backupFrequency:'daily',backupEndpoint:''}}
 function load(){try{return Object.assign(fresh(),JSON.parse(localStorage.getItem(KEY)||'{}'))}catch(e){return fresh()}}
-function save(){localStorage.setItem(KEY,JSON.stringify(db));}
+async function syncSupabase(){
+  if(!db.supabase?.url || !db.supabase?.key) return;
+  if(!navigator.onLine) return;
+
+  console.log("AFEM: préparation synchronisation Supabase");
+                                                                                 }function save(){localStorage.setItem(KEY,JSON.stringify(db));}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 document.getElementById('loginType').onchange=()=>{let m=document.getElementById('loginType').value==='member';document.getElementById('loginIdLabel').textContent=m?'Téléphone':'Identifiant administrateur';document.getElementById('loginId').placeholder=m?'Téléphone du membre':'admin'};
 async function login(){
