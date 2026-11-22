@@ -181,7 +181,7 @@ function load(){try{return Object.assign(fresh(),JSON.parse(localStorage.getItem
     alert('Erreur de synchronisation : '+e.message);
   }
 }
-                                                                                 }function save(){localStorage.setItem(KEY,JSON.stringify(db));}
+                                                                                 function save(){localStorage.setItem(KEY,JSON.stringify(db));}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 document.getElementById('loginType').onchange=()=>{let m=document.getElementById('loginType').value==='member';document.getElementById('loginIdLabel').textContent=m?'Téléphone':'Identifiant administrateur';document.getElementById('loginId').placeholder=m?'Téléphone du membre':'admin'};
 async function login(){
