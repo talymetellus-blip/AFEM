@@ -21,7 +21,15 @@ h2{color:var(--green);margin:5px 0 15px}.grid{display:grid;grid-template-columns
 <label id="loginIdLabel">E-mail administrateur ou identifiant local</label><input id="loginId" autocomplete="username" placeholder="talymetellus@gmail.com">
 <label>Mot de passe</label><input id="loginPass" type="password" autocomplete="current-password" placeholder="Mot de passe">
 <button onclick="login()">Se connecter</button><div class="notice">Administrateur Supabase : entrez votre e-mail et votre mot de passe Auth. Accès local de secours : admin / AFEM2026. Les comptes membres restent locaux dans cette version de test.</div></section>
-<section id="appView" class="hidden"><div class="row"><div><h2 id="pageTitle">Tableau de bord</h2><span class="muted" id="welcome"></span></div><button class="gold small" onclick="exportBackup()">Exporter sauvegarde JSON</button></div>
+<section id="resetPasswordView" class="login hidden">
+  <h1>Nouveau mot de passe</h1>
+  <p class="muted">Créez votre nouveau mot de passe administrateur.</p>
+  <label>Nouveau mot de passe</label>
+  <input id="newSupabasePass" type="password" minlength="8" placeholder="8 caractères minimum">
+  <label>Confirmer le mot de passe</label>
+  <input id="confirmSupabasePass" type="password" minlength="8" placeholder="Confirmer le mot de passe">
+  <button onclick="updateSupabasePassword()">Enregistrer le nouveau mot de passe</button>
+</section><section id="appView" class="hidden"><div class="row"><div><h2 id="pageTitle">Tableau de bord</h2><span class="muted" id="welcome"></span></div><button class="gold small" onclick="exportBackup()">Exporter sauvegarde JSON</button></div>
 <nav id="nav"></nav><div id="content"></div></section>
 </main>
 <script>
