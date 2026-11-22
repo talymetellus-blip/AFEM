@@ -316,5 +316,52 @@ function importBackup(){let f=document.getElementById('backupFile').files[0];if(
 function saveFirebase(){db.firebase={apiKey:document.getElementById('fbApi').value.trim(),authDomain:document.getElementById('fbAuth').value.trim(),projectId:document.getElementById('fbProject').value.trim(),appId:document.getElementById('fbApp').value.trim()};save();alert('Configuration enregistrée. La synchronisation doit encore être activée et sécurisée dans Firebase.')}
 async function syncFirebase(){if(!navigator.onLine){alert('Pas de connexion Internet. Les données restent enregistrées localement.');return}if(!db.firebase?.apiKey||!db.firebase?.projectId){alert('Ajoutez d’abord la configuration Firebase.');return}alert('Configuration détectée. La synchronisation cloud automatique n’est pas activée dans cette version de test. Je ne marque donc pas les données comme synchronisées.')}
 document.addEventListener('input',e=>{if(['txCapital','txInterest','txPenalty'].includes(e.target.id)){let total=['txCapital','txInterest','txPenalty'].reduce((a,id)=>a+Number(document.getElementById(id)?.value||0),0);let out=document.getElementById('txTotal');if(out)out.value=total.toFixed(2)}});
-window.addEventListener('online',()=>{document.getElementById('syncState').textContent='En ligne · local';});window.addEventListener('offline',()=>{document.getElementById('syncState').textContent='Hors ligne · local';});
-</script></body></html>
+window.addEventListener('online',()=>{document.getElementById('syncState').textContent='En ligne · local';});window.addEventListener('offline',()=>{document.getElementById('syncState').textContent='Hors ligne · local';}); 
+</script></body></html>async function updateSupabasePassword(){
+  const p=document.getElementById('newSupabasePass').value;
+  const c=document.getElementById('confirmSupabasePass').value;
+  const s=window.afemSupabaseSession;
+  if(!s?.access_token){
+    alert('Session de récupération absente. Demandez un nouveau lien.');
+    return;
+  }
+  if(p.length<8){
+    alert('Le mot de passe doit contenir au moins 8 caractères.');
+    return;
+  }
+  if(p!==c){
+    alert('Les deux mots de passe ne correspondent pas.');
+    return;
+  }
+  try{
+    const r=await fetch(db.supabase.url+'/auth/v1/user',{
+      method:'PUT',
+      headers:{
+        'Content-Type':'application/json',
+        apikey:db.supabase.key,
+        Authorization:'Bearer '+s.access_token
+      },
+      body:JSON.stringify({password:p})
+    });
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.message||'Erreur Supabase');
+    alert('Mot de passe modifié avec succès.');
+    window.afemSupabaseSession=null;
+    document.getElementById('resetPasswordView').classList.add('hidden');
+    document.getElementById('loginView').classList.remove('hidden');
+  }catch(e){
+    alert('Erreur : '+e.message);
+  }
+}
+
+function checkPasswordRecovery(){
+  const h=new URLSearchParams(window.location.hash.slice(1));
+  const token=h.get('access_token');
+  if(h.get('type')==='recovery' && token){
+    window.afemSupabaseSession={access_token:token};
+    document.getElementById('loginView').classList.add('hidden');
+    document.getElementById('appView').classList.add('hidden');
+    document.getElementById('resetPasswordView').classList.remove('hidden');
+  }
+}
+checkPasswordRecovery();
