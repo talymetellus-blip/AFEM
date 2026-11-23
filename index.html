@@ -317,7 +317,7 @@ function saveFirebase(){db.firebase={apiKey:document.getElementById('fbApi').val
 async function syncFirebase(){if(!navigator.onLine){alert('Pas de connexion Internet. Les données restent enregistrées localement.');return}if(!db.firebase?.apiKey||!db.firebase?.projectId){alert('Ajoutez d’abord la configuration Firebase.');return}alert('Configuration détectée. La synchronisation cloud automatique n’est pas activée dans cette version de test. Je ne marque donc pas les données comme synchronisées.')}
 document.addEventListener('input',e=>{if(['txCapital','txInterest','txPenalty'].includes(e.target.id)){let total=['txCapital','txInterest','txPenalty'].reduce((a,id)=>a+Number(document.getElementById(id)?.value||0),0);let out=document.getElementById('txTotal');if(out)out.value=total.toFixed(2)}});
 window.addEventListener('online',()=>{document.getElementById('syncState').textContent='En ligne · local';});window.addEventListener('offline',()=>{document.getElementById('syncState').textContent='Hors ligne · local';}); 
-</script></body></html>async function updateSupabasePassword(){
+ async function updateSupabasePassword(){
   const p=document.getElementById('newSupabasePass').value;
   const c=document.getElementById('confirmSupabasePass').value;
   const s=window.afemSupabaseSession;
@@ -364,4 +364,6 @@ function checkPasswordRecovery(){
     document.getElementById('resetPasswordView').classList.remove('hidden');
   }
 }
-checkPasswordRecovery();
+checkPasswordRecovery();</script>
+</body>
+</html>
