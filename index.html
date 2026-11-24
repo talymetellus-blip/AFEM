@@ -353,17 +353,49 @@ window.addEventListener('online',()=>{document.getElementById('syncState').textC
     alert('Erreur : '+e.message);
   }
 }
-
-function checkPasswordRecovery(){
+async function checkPasswordRecovery(){
   const h=new URLSearchParams(window.location.hash.slice(1));
-  const token=h.get('access_token');
+  const q=new URLSearchParams(window.location.search);
+  let token=h.get('access_token');
+
   if(h.get('type')==='recovery' && token){
     window.afemSupabaseSession={access_token:token};
-    document.getElementById('loginView').classList.add('hidden');
-    document.getElementById('appView').classList.add('hidden');
-    document.getElementById('resetPasswordView').classList.remove('hidden');
+  }else if(q.get('code')){
+    try{
+      const verifierKey='sb-iqcypseifgqotgsdfvhn-auth-token-code-verifier';
+      let verifier=localStorage.getItem(verifierKey);
+      if(!verifier) throw new Error('Code de vérification absent.');
+      verifier=verifier.split('/')[0];
+
+      const r=await fetch(db.supabase.url+'/auth/v1/token?grant_type=pkce',{
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          apikey:db.supabase.key
+        },
+        body:JSON.stringify({
+          auth_code:q.get('code'),
+          code_verifier:verifier
+        })
+      });
+      const d=await r.json();
+      if(!r.ok || !d.access_token)
+        throw new Error(d.msg||d.message||'Lien invalide ou expiré.');
+
+      window.afemSupabaseSession={access_token:d.access_token};
+    }catch(e){
+      alert('Récupération impossible : '+e.message+'. Demandez un nouveau lien.');
+      return;
+    }
+  }else{
+    return;
   }
+
+  document.getElementById('loginView').classList.add('hidden');
+  document.getElementById('appView').classList.add('hidden');
+  document.getElementById('resetPasswordView').classList.remove('hidden');
 }
+ 
 checkPasswordRecovery();</script>
 </body>
 </html>
