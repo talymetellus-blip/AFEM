@@ -38,7 +38,208 @@ const modules=['Tableau de bord','Membres','Accès membres','Dépôts','Retraits
 let db=load(), user=null, current='Tableau de bord', editing=null;
 function fresh(){return {members:[],tx:[],rate:4,openingCash:0,adminPassword:'AFEM2026',messages:[],cash:[],firebase:null,lastSync:null,backupEmail:'djeffson.simon10@gmail.com',backupFrequency:'daily',backupEndpoint:''}}
 function load(){try{return Object.assign(fresh(),JSON.parse(localStorage.getItem(KEY)||'{}'))}catch(e){return fresh()}}
- async function syncSupabase(){
+ async function syncSupabase(){ 
+if(!cfg?.url||!cfg?.key){
+    alert('Configurez Supabase avant la synchronisation.');
+    return;
+  }
+  if(!navigator.onLine){
+    alert('Connexion Internet indisponible.');
+    return;
+  }
+  if(!session?.access_token||user?.type!=='admin'){
+    alert('Connectez-vous avec le compte administrateur Supabase.');
+    return;
+  }
+
+  const base=cfg.url.replace(/\/$/,'')+'/rest/v1/';
+  const headers={
+    apikey:cfg.key,
+    Authorization:'Bearer '+session.access_token,
+    'Content-Type':'application/json',
+    Prefer:'return=representation'
+  };
+
+  async function api(path,options={}){
+    const r=await fetch(base+path,{
+      ...options,
+      headers:{...headers,...(options.headers||{})}
+    });
+    const txt=await r.text();
+    if(!r.ok) throw new Error(txt||'Erreur Supabase '+r.status);
+    return txt?JSON.parse(txt):[];
+  }
+
+  try{
+    const remoteMembers=await api('members?select=id,full_name,phone,active');
+    const memberMap={};
+
+    for(const m of db.members||[]){
+      let remote=remoteMembers.find(x=>x.phone===m.phone);
+
+      if(!remote){
+        const result=await api('members',{
+          method:'POST',
+          body:JSON.stringify({
+            full_name:m.name,
+            phone:m.phone,
+            active:m.status!=='inactive'
+          })
+        });
+        remote=result[0];
+        if(remote) remoteMembers.push(remote);
+      }else{
+        await api('members?id=eq.'+remote.id,{
+          method:'PATCH',
+          body:JSON.stringify({
+            full_name:m.name,
+            active:m.status!=='inactive'
+          })
+        });
+      }
+
+      if(remote) memberMap[m.id]=remote.id;
+    }
+
+    for(const m of remoteMembers){
+      if(!(db.members||[]).some(x=>x.phone===m.phone)){
+        db.members.push({
+          id:m.id,
+          name:m.full_name,
+          phone:m.phone,
+          password:'',
+          status:m.active===false?'inactive':'active'
+        });
+      }
+    }
+
+    const remoteTx=await api('transactions?select=id,member_id,type,amount,transaction_date,note');
+
+    for(const t of db.tx||[]){
+      const memberId=memberMap[t.memberId];
+      if(!memberId) continue;
+
+      const tag='[[AFEM:'+t.id+']]';
+      const payload={
+        note:t.note||'',
+        rate:t.rate??null,
+        capital:t.capital??null,
+        interest:t.interest??null,
+        penalty:t.penalty??null
+      };
+
+      const data={
+        member_id:memberId,
+        type:t.type,
+        amount:Number(t.amount)||0,
+        transaction_date:t.date,
+        note:tag+JSON.stringify(payload)
+      };
+
+      const existing=remoteTx.find(x=>(x.note||'').includes(tag));
+
+      if(existing){
+        await api('transactions?id=eq.'+existing.id,{
+          method:'PATCH',
+          body:JSON.stringify(data)
+        });
+      }else{
+        const result=await api('transactions',{
+          method:'POST',
+          body:JSON.stringify(data)
+        });
+        if(result[0]) remoteTx.push(result[0]);
+      }
+    }
+
+    const freshTx=await api('transactions?select=id,member_id,type,amount,transaction_date,note');
+
+    for(const t of freshTx){
+      const match=(t.note||'').match(/\[\[AFEM:(.*?)\]\]/);
+      if(!match) continue;
+
+      const member=db.members.find(m=>(memberMap[m.id]||m.id)===t.member_id);
+      if(!member) continue;
+
+      const raw=(t.note||'').slice(match[0].length).trim();
+      let details={note:raw};
+      try{details=JSON.parse(raw)}catch(e){}
+
+      const item={
+        id:match[1],
+        memberId:member.id,
+        type:t.type,
+        amount:Number(t.amount),
+        date:t.transaction_date,
+        note:details.note||'',
+        rate:details.rate??null,
+        capital:details.capital??null,
+        interest:details.interest??null,
+        penalty:details.penalty??null
+      };
+
+      const local=db.tx.find(x=>x.id===item.id);
+      if(local) Object.assign(local,item);
+      else db.tx.push(item);
+    }
+
+    const remoteCash=await api('admin_cash?select=id,operation,amount,operation_date,note');
+
+    for(const c of db.cash||[]){
+      const tag='[[AFEM_CASH:'+c.id+']]';
+      const data={
+        operation:c.direction,
+        amount:Number(c.amount)||0,
+        operation_date:c.date,
+        note:tag+' '+(c.note||'')
+      };
+
+      const existing=remoteCash.find(x=>(x.note||'').includes(tag));
+
+      if(existing){
+        await api('admin_cash?id=eq.'+existing.id,{
+          method:'PATCH',
+          body:JSON.stringify(data)
+        });
+      }else{
+        const result=await api('admin_cash',{
+          method:'POST',
+          body:JSON.stringify(data)
+        });
+        if(result[0]) remoteCash.push(result[0]);
+      }
+    }
+
+    const freshCash=await api('admin_cash?select=id,operation,amount,operation_date,note');
+
+    for(const c of freshCash){
+      const match=(c.note||'').match(/\[\[AFEM_CASH:(.*?)\]\]/);
+      if(!match) continue;
+
+      const item={
+        id:match[1],
+        direction:c.operation,
+        amount:Number(c.amount),
+        date:c.operation_date,
+        note:(c.note||'').replace(/\[\[AFEM_CASH:.*?\]\]\s*/,'')
+      };
+
+      const local=db.cash.find(x=>x.id===item.id);
+      if(local) Object.assign(local,item);
+      else db.cash.push(item);
+    }
+
+    save();
+    db.lastSync=new Date().toISOString();
+    save();
+
+    alert('Synchronisation terminée. Vérifiez les données sur Supabase.');
+  }catch(e){
+    console.error('AFEM Sync:',e);
+    alert('Erreur de synchronisation : '+e.message);
+  }
+}
+
   const cfg=db.supabase;
   const session=window.afemSupabaseSession;
 
@@ -135,60 +336,7 @@ function load(){try{return Object.assign(fresh(),JSON.parse(localStorage.getItem
         await api('transactions?id=eq.'+existing.id,{
           method:'PATCH',
           body:JSON.stringify(data)
-        });
-      }else{
-        const result=await api('transactions',{
-          method:'POST',
-          body:JSON.stringify(data)
-        });
-        if(result[0]) remoteTx.push(result[0]);
-      }
-    }
-
-    const freshTx=await api('transactions?select=id,member_id,type,amount,transaction_date,note');
-
-    for(const t of freshTx){
-      const match=(t.note||'').match(/\[\[AFEM:(.*?)\]\]/);
-      if(!match) continue;
-
-      const member=db.members.find(m=>
-        (memberMap[m.id]||m.id)===t.member_id
-      );
-      if(!member) continue;
-
-      const local=db.tx.find(x=>x.id===match[1]);
-      const cleanNote=(t.note||'').replace(/\[\[AFEM:.*?\]\]\s*/,'');
-      const item={
-        id:match[1],
-        memberId:member.id,
-        type:t.type,
-        amount:Number(t.amount),
-        date:t.transaction_date,
-        note:cleanNote
-      };
-
-      if(local) Object.assign(local,item);
-      else db.tx.push(item);
-    }
-
-    await api('app_settings?id=eq.1',{
-      method:'PATCH',
-      body:JSON.stringify({
-        loan_rate:Number(db.rate)||4,
-        opening_cash:Number(db.openingCash)||0,
-        backup_email:db.backupEmail||'djeffson.simon10@gmail.com'
-      })
-    });
-
-    save();
-    db.lastSync=new Date().toISOString();
-    save();
-    alert('Synchronisation terminée. Vérifiez les données sur Supabase.');
-  }catch(e){
-    console.error('AFEM Sync:',e);
-    alert('Erreur de synchronisation : '+e.message);
-  }
-}
+ 
                                                                                  function save(){localStorage.setItem(KEY,JSON.stringify(db));}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 document.getElementById('loginType').onchange=()=>{let m=document.getElementById('loginType').value==='member';document.getElementById('loginIdLabel').textContent=m?'Téléphone':'Identifiant administrateur';document.getElementById('loginId').placeholder=m?'Téléphone du membre':'admin'};
