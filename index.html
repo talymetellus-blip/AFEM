@@ -261,86 +261,304 @@ if(!cfg?.url||!cfg?.key){
     apikey:cfg.key,
     Authorization:'Bearer '+session.access_token,
     'Content-Type':'application/json',
+ 
+async function syncSupabase(){
+  alert('La synchronisation complète AFEM doit encore être vérifiée. Aucune donnée n’a été envoyée ni modifiée sur Supabase.');
+}
+
+function save(){
+  localStorage.setItem(KEY,JSON.stringify(db));
+}
+
+function esc(s){
+  return String(s??'').replace(/[&<>"']/g,c=>({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+
+document.getElementById('loginType').onchange=()=>{
+  let m=document.getElementById('loginType').value==='member';
+  document.getElementById('loginIdLabel').textContent=
+    m?'Téléphone':'Identifiant administrateur';
+  document.getElementById('loginId').placeholder=
+    m?'Téléphone du membre':'admin';
+};
+
+async function login(){
+
+  if(!navigator.onLine){
+    alert('Connexion Internet indisponible.');
+    return;
+  }
+
+  if(!session?.access_token || user?.type!=='admin' || user?.auth!=='supabase'){
+    alert('Connectez-vous avec le compte administrateur Supabase.');
+    return;
+  }
+
+  const base=cfg.url.replace(/\/$/,'')+'/rest/v1/';
+  const headers={
+    apikey:cfg.key,
+    Authorization:'Bearer '+session.access_token,
+    'Content-Type':'application/json',
     Prefer:'return=representation'
   };
 
   async function api(path,options={}){
-    const r=await fetch(base+path,{
+    const response=await fetch(base+path,{
       ...options,
       headers:{...headers,...(options.headers||{})}
     });
-    const txt=await r.text();
-    if(!r.ok) throw new Error(txt||'Erreur Supabase '+r.status);
+
+    const txt=await response.text();
+
+    if(!response.ok){
+      throw new Error(txt||'Erreur Supabase '+response.status);
+    }
+
     return txt?JSON.parse(txt):[];
   }
 
   try{
-    const remoteMembers=await api('members?select=id,full_name,phone');
-    const memberMap={};
+    db.members=db.members||[];
+    db.tx=db.tx||[];
+    db.cash=db.cash||[];
 
-    for(const m of db.members||[]){
-      const found=remoteMembers.find(x=>x.phone===m.phone);
-      let remote=found;
+    // 1. Synchroniser les membres
+    const remoteMembers=await api(
+      'members?select=id,full_name,phone'
+    );
+
+    const memberMap={};
+    const localIdByRemoteId={};
+
+    for(const m of db.members){
+      let remote=remoteMembers.find(x=>x.phone===m.phone);
 
       if(!remote){
         const result=await api('members',{
           method:'POST',
           body:JSON.stringify({
             full_name:m.name,
-            phone:m.phone,
-            active:m.status!=='inactive'
+            phone:m.phone
           })
         });
+
         remote=result[0];
-        remoteMembers.push(remote);
+
+        if(remote) remoteMembers.push(remote);
+      }else{
+        await api('members?id=eq.'+remote.id,{
+          method:'PATCH',
+          body:JSON.stringify({
+            full_name:m.name
+          })
+        });
       }
 
-      if(remote) memberMap[m.id]=remote.id;
+      if(remote){
+        memberMap[m.id]=remote.id;
+        localIdByRemoteId[remote.id]=m.id;
+      }
     }
 
-    const allMembers=await api('members?select=id,full_name,phone');
-    for(const m of allMembers){
-      if(!(db.members||[]).some(x=>x.phone===m.phone)){
-        db.members.push({
+    // Récupérer les membres déjà présents sur Supabase
+    for(const m of remoteMembers){
+      if(!db.members.some(x=>x.phone===m.phone)){
+        const local={
           id:m.id,
           name:m.full_name,
           phone:m.phone,
           password:'',
           status:'active'
-        });
+        };
+
+        db.members.push(local);
+        memberMap[local.id]=m.id;
+        localIdByRemoteId[m.id]=local.id;
       }
     }
 
-    const remoteTx=await api('transactions?select=id,member_id,type,amount,transaction_date,note');
-    const marker='[[AFEM:';
+    // 2. Synchroniser les transactions
+    let remoteTx=await api(
+      'transactions?select=id,member_id,type,amount,transaction_date,note'
+    );
 
-    for(const t of db.tx||[]){
-      const memberId=memberMap[t.memberId]||
-        allMembers.find(m=>m.id===t.memberId)?.id;
-
+    for(const t of db.tx){
+      const memberId=memberMap[t.memberId];
       if(!memberId) continue;
 
-      const tag=marker+t.id+']]';
-      const note=tag+' '+(t.note||'');
-      const existing=remoteTx.find(x=>(x.note||'').includes(tag));
+      const tag='[[AFEM:'+t.id+']]';
+
+      const details={
+        note:t.note||'',
+        rate:t.rate??null,
+        capital:t.capital??null,
+        interest:t.interest??null,
+        penalty:t.penalty??null
+      };
 
       const data={
         member_id:memberId,
         type:t.type,
         amount:Number(t.amount)||0,
         transaction_date:t.date||new Date().toISOString().slice(0,10),
-        note
+        note:tag+JSON.stringify(details)
       };
+
+      const existing=remoteTx.find(
+        x=>(x.note||'').includes(tag)
+      );
 
       if(existing){
         await api('transactions?id=eq.'+existing.id,{
           method:'PATCH',
           body:JSON.stringify(data)
- 
-                                                                                 function save(){localStorage.setItem(KEY,JSON.stringify(db));}
-function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-document.getElementById('loginType').onchange=()=>{let m=document.getElementById('loginType').value==='member';document.getElementById('loginIdLabel').textContent=m?'Téléphone':'Identifiant administrateur';document.getElementById('loginId').placeholder=m?'Téléphone du membre':'admin'};
-async function login(){
+        });
+      }else{
+        const result=await api('transactions',{
+          method:'POST',
+          body:JSON.stringify(data)
+        });
+
+        if(result[0]) remoteTx.push(result[0]);
+      }
+    }
+
+    // Récupérer les transactions synchronisées
+    remoteTx=await api(
+      'transactions?select=id,member_id,type,amount,transaction_date,note'
+    );
+
+    for(const t of remoteTx){
+      const match=(t.note||'').match(/\[\[AFEM:(.*?)\]\]/);
+      if(!match) continue;
+
+      const localMemberId=localIdByRemoteId[t.member_id];
+      if(!localMemberId) continue;
+
+      const raw=t.note.slice(match[0].length).trim();
+
+      let details={note:raw};
+      try{
+        details=JSON.parse(raw);
+      }catch(e){}
+
+      const item={
+        id:match[1],
+        memberId:localMemberId,
+        type:t.type,
+        amount:Number(t.amount),
+        date:t.transaction_date,
+        note:details.note||'',
+        rate:details.rate??null,
+        capital:details.capital??null,
+        interest:details.interest??null,
+        penalty:details.penalty??null
+      };
+
+      const local=db.tx.find(x=>x.id===item.id);
+
+      if(local) Object.assign(local,item);
+      else db.tx.push(item);
+    }
+
+    // 3. Synchroniser la caisse administrateur
+    let remoteCash=await api(
+      'admin_cash?select=id,operation,amount,operation_date,note'
+    );
+
+    for(const c of db.cash){
+      const tag='[[AFEM_CASH:'+c.id+']]';
+
+      const data={
+        operation:c.direction,
+        amount:Number(c.amount)||0,
+        operation_date:c.date,
+        note:tag+' '+(c.note||'')
+      };
+
+      const existing=remoteCash.find(
+        x=>(x.note||'').includes(tag)
+      );
+
+      if(existing){
+        await api('admin_cash?id=eq.'+existing.id,{
+          method:'PATCH',
+          body:JSON.stringify(data)
+        });
+      }else{
+        const result=await api('admin_cash',{
+          method:'POST',
+          body:JSON.stringify(data)
+        });
+
+        if(result[0]) remoteCash.push(result[0]);
+      }
+    }
+
+    // Récupérer la caisse administrateur
+    remoteCash=await api(
+      'admin_cash?select=id,operation,amount,operation_date,note'
+    );
+
+    for(const c of remoteCash){
+      const match=(c.note||'').match(/\[\[AFEM_CASH:(.*?)\]\]/);
+      if(!match) continue;
+
+      const item={
+        id:match[1],
+        direction:c.operation,
+        amount:Number(c.amount),
+        date:c.operation_date,
+        note:(c.note||'').replace(
+          /\[\[AFEM_CASH:.*?\]\]\s*/,''
+        )
+      };
+
+      const local=db.cash.find(x=>x.id===item.id);
+
+      if(local) Object.assign(local,item);
+      else db.cash.push(item);
+    }
+
+    db.lastSync=new Date().toISOString();
+    save();
+
+    alert('Synchronisation terminée. Vérifiez les données sur Supabase.');
+
+  }catch(e){
+    console.error('AFEM Sync:',e);
+    alert('Erreur de synchronisation : '+e.message);
+  }
+}
+
+function save(){
+  localStorage.setItem(KEY,JSON.stringify(db));
+}
+
+function esc(s){
+  return String(s??'').replace(/[&<>"']/g,c=>({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+
+document.getElementById('loginType').onchange=()=>{
+  let m=document.getElementById('loginType').value==='member';
+  document.getElementById('loginIdLabel').textContent=
+    m?'Téléphone':'Identifiant administrateur';
+  document.getElementById('loginId').placeholder=
+    m?'Téléphone du membre':'admin';
+};
+
  let type=document.getElementById('loginType').value;
  let id=document.getElementById('loginId').value.trim();
  let p=document.getElementById('loginPass').value;
